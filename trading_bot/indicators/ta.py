@@ -44,3 +44,57 @@ def stochastic(high: pd.Series, low: pd.Series, close: pd.Series, k: int = 14, d
 
 def momentum(series: pd.Series, period: int = 10) -> pd.Series:
     return series - series.shift(period)
+
+
+def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14):
+    """Calculate ADX, +DI, -DI"""
+    prev_close = close.shift(1)
+    
+    # True Range
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    
+    # Directional Movement
+    up_move = high - high.shift(1)
+    down_move = low.shift(1) - low
+    
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+    
+    plus_dm = pd.Series(plus_dm, index=close.index)
+    minus_dm = pd.Series(minus_dm, index=close.index)
+    
+    # Smoothed values
+    tr_smooth = tr.ewm(alpha=1/period, adjust=False).mean()
+    plus_dm_smooth = plus_dm.ewm(alpha=1/period, adjust=False).mean()
+    minus_dm_smooth = minus_dm.ewm(alpha=1/period, adjust=False).mean()
+    
+    # DI calculations
+    plus_di = 100 * plus_dm_smooth / (tr_smooth + 1e-9)
+    minus_di = 100 * minus_dm_smooth / (tr_smooth + 1e-9)
+    
+    # ADX calculation
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-9)
+    adx_value = dx.ewm(alpha=1/period, adjust=False).mean()
+    
+    return adx_value, plus_di, minus_di
+
+
+def volume_analysis(volume: pd.Series, period: int = 20):
+    """Volume analysis for Order Flow confirmation"""
+    volume_sma = volume.rolling(window=period).mean()
+    volume_ratio = volume / (volume_sma + 1e-9)
+    
+    # Volume expansion/contraction
+    volume_expansion = volume_ratio > 1.2
+    volume_contraction = volume_ratio < 0.8
+    
+    return {
+        'volume_ratio': volume_ratio,
+        'volume_sma': volume_sma,
+        'expansion': volume_expansion,
+        'contraction': volume_contraction
+    }
